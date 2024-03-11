@@ -1,380 +1,112 @@
 import axios from 'axios';
+//Token clientify
+const token = "9ea36e0237e45db8581e45546b9a5474a701556f";
 
-//token Clean Cloud
-const api_token = "1d1132d976e9b68ba0ae528596771783e91aa9c1";
-//const delayBetweenRequests = 1000;
+if (!token) {
+  console.error('Token de autorización no proporcionado. Asegúrate de configurar la variable de entorno CLIENTIFY_TOKEN.');
+  process.exit(1);
+}
 
-// Función para obtener la fecha actual en formato "YYYY-MM-DD"
+const processedContacts = new Set();
+
 const getCurrentDate = () => {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+  const currentDate = new Date();
+  const year = currentDate.getFullYear();
+  const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+  const day = String(currentDate.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
-// Variable global para mantener un conjunto de IDs de pedidos procesados
-const processedOrderIds = new Set();
+const threeDaysAgo = new Date();
+threeDaysAgo.setDate(threeDaysAgo.getDate() - 2);
+const formattedThreeDaysAgo = threeDaysAgo.toISOString().split('T')[0];
 
-const fifteenDaysAgo = new Date();
-
-//El ultimo dato determina la cantidad de dias atras que va a buscar, en este caso 5
-fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 2);
-
-
-const customersOptions = {
-    method: 'post',
-    url: 'https://cleancloudapp.com/api/getCustomer',
-    headers: {
-        'Content-Type': 'application/json'
-        
-    },
-
-    data: {
-        "api_token": api_token,
-        "dateFrom": fifteenDaysAgo.toISOString().split('T')[0],  // Formatea la fecha a "YYYY-MM-DD"
-        "dateTo": getCurrentDate(),
-        excludeDeactivated: 0
-    }
-};console.log('Script iniciado');
-
-
-const ordersOptions = {
-    method: 'post',
-    url: 'https://cleancloudapp.com/api/getOrders',
-    headers: {
-        'Content-Type': 'application/json'
-    },
-    data: {
-        "api_token": api_token,
-        "dateFrom": fifteenDaysAgo.toISOString().split('T')[0],
-        "dateTo": getCurrentDate(),
-        excludeDeactivated: 0
-    }
+const configWithDateFilter = {
+  method: 'get',
+  maxBodyLength: Infinity,
+  url: 'https://api.clientify.net/v1/contacts/',
+  params: {
+    created_after: formattedThreeDaysAgo,
+  },
+  headers: {
+    'Authorization': `Token ${token}`
+  }
 };
-let cachedCustomersData = null;
-let cachedOrdersData = null;
 
+const isDateWithinLast3Days = (currentDate, contactDate) => {
+  const today = new Date(currentDate);
+  const contactCreatedDate = new Date(contactDate.split('T')[0]);
+  const timeDifference = today.getTime() - contactCreatedDate.getTime();
+  const daysDifference = timeDifference / (1000 * 3600 * 24);
+  return daysDifference <= 3;
+};
 
-// Función para procesar y mostrar la información de un pedido y cliente correspondiente
-const processCustomerOrder = (customer, order) => {
-    //Verificar si el ID del pedido ya ha sido procesado
-    if (processedOrderIds.has(order.id)) {
-        console.log(`Pedido con ID ${order.id} ya procesado. Ignorando.`);
-        return;
-    }
+const displayContactInfo = (contact) => {
+  console.log(`Nombre: ${contact.first_name} ${contact.last_name}`);
+  console.log(`Número de contacto: ${contact.phones && contact.phones.length > 0 ? contact.phones[0].phone : 'N/A'}`);
+  console.log(`E-mail: ${contact.emails && contact.emails.length > 0 ? contact.emails[0].email : 'notiene@lavanderialavafam.com'}`);
+  console.log(`Dirección: ${contact.addresses && contact.addresses.length > 0 ? contact.addresses[0].street : 'N/A'}, ${contact.addresses && contact.addresses.length > 0 ? contact.addresses[0].city : 'N/A'}, ${contact.addresses && contact.addresses.length > 0 ? contact.addresses[0].state : 'N/A'}, ${contact.addresses && contact.addresses.length > 0 ? contact.addresses[0].country : 'N/A'}`);
+  console.log(`Tags: ${contact.tags && contact.tags.length > 0 ? contact.tags.join(', ') : 'N/A'}`);
+  console.log(`Fecha de creación: ${contact.created}`);
 
-    //Declaracion de variables:
-    console.log('Informacion cliente:');
-    console.log('ID:', customer.ID);
-    console.log('Name:', customer.Name);
-    console.log('Email:', customer.Email);
-    console.log('Telefono:', customer.Tel);
-    console.log('Direccion:', customer.customerAddressInstructions);
-    console.log('Ciudad :', customer.Address);
-    console.log('Apartamento:', customer.Address)
-    console.log('Barrio :', customer.customerAddressInstructions);
-    console.log('Código postal :', customer.Address);
-    console.log('Servicio: ', customer.Notes);
-    console.log('Notas Privadas :', customer.privateNotes);
-    console.log('Order Information:');
-    console.log('Recogida del pedido:', order.address);
-    console.log('Notas:', order.notes);
-    console.log('ID del pedido:', order.id);
-    console.log('Fecha de recogida del pedido:', order.pickupDate);
-    console.log('Monto total del pedido:', order.total);
-    console.log(' Franja horaria de entrega del pedido:', order.deliveryTime);
+  console.log('------------------------');
+};
 
-    if (order.paid == 1) {
-        order.paid = "Pagado"
+const fetchDataAndPost = async () => {
+  try {
+    const response = await axios(configWithDateFilter);
+    const contacts = response.data.results;
 
-    } else {
-        order.paid = "No Pagado"
+    const currentDate = getCurrentDate();
+    const pruebaContacts = contacts.filter(contact =>
+      contact.tags && contact.tags.includes('prueba') && isDateWithinLast3Days(currentDate, contact.created)
+    );
 
-    }
+    pruebaContacts.forEach(async (contact, index) => {
+      // Verifica si el contacto ya ha sido procesado antes de mostrar la información
+      if (!processedContacts.has(contact.id)) {
+        displayContactInfo(contact);
+        processedContacts.add(contact.id);
 
-    console.log('Hora de recogida:', order.deliveryTime);
-    console.log('Cantidad de piezas:', order.pieces);
-
-
-    if (order.status == 0) {
-        order.status = 'Limpiando';
-
-    } if (order.status == 1) {
-        order.status = 'Limpio y listo para entregar';
-
-    } if (order.status == 2) {
-        order.status = 'Completado';
-
-    } if (order.status == 4) {
-        order.status = 'Esperando recogida';
-
-    }
-
-    console.log('---------------------------------');
-
-    // Agregar el ID del pedido al conjunto
-    processedOrderIds.add(order.id);
-    //Declaracion de variables a Clientify
-
-    const contactData = {
-        "id": parseInt(customer.Tel, 10),
-        "first_name": customer.Name,
-        "email": customer.Email,
-        "phone": customer.Tel,
-        //"status": order.status,
-        "addresses": [
-            {
-                "street": customer.customerAddressInstructions,
-                // "city": customer.Address,
-                // "state": customer.Address,
-                "country": "Colombia",
-                "postal_code": "",
-                "type": 1
+        if (contact.addresses && contact.addresses.length > 0) {
+          const postConfig = {
+            method: 'POST',
+            url: 'https://cleancloudapp.com/api/addCustomer',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            data: {
+              api_token: '1d1132d976e9b68ba0ae528596771783e91aa9c1//',
+              customerName: `${contact.first_name} ${contact.last_name}`,
+              customerTel: contact.phones && contact.phones.length > 0 ? contact.phones[0].phone : '',
+              customerEmail: contact.emails && contact.emails.length > 0 ? contact.emails[0].email : '',
+              customerAddress: `${contact.addresses[0].street}, ${contact.addresses[0].city}, ${contact.addresses[0].state}, ${contact.addresses[0].country}`,
+              customerNotes: 'Nota de prueba, cliente desde clientify',
             }
-        ],
+          };
 
-        "message":
-            'ID del pedido: ' + order.id + "\n"
-            + 'Servicio: ' + order.notes + "\n"
-            + 'Cantidad de piezas: ' + order.pieces + "\n"
-            + 'Status: ' + order.status + "\n"
-            + 'Status del pago: ' + order.paid + "\n"
-            + 'Hora de recogida: ' + order.deliveryTime + "\n"
-            + 'Total del pedido: ' + order.total + "\n"
-            + 'Dirección del pedido: ' + order.address + "\n"
-            + 'Comentarios: ' + customer.privateNotes
-        ,
+          try {
+            const postResponse = await axios(postConfig);
+            console.log('Status:', postResponse.status);
+            console.log('Response:', postResponse.data);
+          } catch (error) {
+            console.error('Error en la solicitud POST:', error);
+          }
+        }
 
-        "description": 'ID Cliente: ' + customer.ID + "\n" + 'ID pedido: ' + order.id +
-            "\n" + 'Hora recogida: ' + order.deliveryTime + "\n"
-            + 'Cantidad piezas: ' + order.pieces,
-
-        "tags": [
-            "api_cleancloud", "Colombia",
-        ],
-
-    };
-
-    const apiUrl = 'https://api.clientify.net/v1/contacts/';
-    const authToken = '9ea36e0237e45db8581e45546b9a5474a701556f';
-
-    const config = {
-        method: 'post',
-        maxBodyLength: Infinity,
-        url: apiUrl,
-        headers: {
-            'Authorization': `Token ${authToken}`,
-            'Content-Type': 'application/json'
-        },
-        data: JSON.stringify(contactData)
-    };
-
-    // Agrega un retraso antes de realizar la siguiente consulta y envío
-    return new Promise(resolve => {
-        setTimeout(() => {
-            axios(config)
-                .then(response => {
-                    console.log("Enviado a Clientify");
-                    resolve();
-                })
-                .catch(error => {
-                    console.log("Contacto NO enviado");
-                    resolve();
-                });
-        });
+        // Agrega un pequeño retardo de 15 segundos entre cada solicitud POST
+        if (index < pruebaContacts.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 15000)); // Pausa de 15 segundos
+        }
+      }
     });
+  } catch (error) {
+    console.error('Error fetching data:', error);
+  }
 };
 
-const continueWithOrders = async (customersData, ordersData) => {
-    for (const customer of customersData) {
-        const associatedOrders = ordersData.filter(order => order.customerID === customer.ID);
-
-        if (associatedOrders.length > 0) {
-            // Si hay pedidos asociados, procesar la información
-            for (const order of associatedOrders) {
-                await processCustomerOrder(customer, order);
-            }
-        } else {
-            // Si no hay pedidos asociados, procesar la información del cliente sin pedidos
-            await processCustomerWithoutOrder(customer);
-        }
-    }
-
-    console.log('Proceso de comparación completado.');
-};
-
-
-// Nueva función para procesar clientes sin pedidos
-const processCustomerWithoutOrder = async (customer) => {
-    console.log('Informacion cliente sin pedidos:');
-    console.log('ID:', customer.ID);
-    console.log('Name:', customer.Name);
-    console.log('Email:', customer.Email);
-    console.log('---------------------------------');
-
-    //Declaracion de variables a Clientify
-
-    const contactData = {
-        "id": parseInt(customer.Tel, 10),
-        "first_name": customer.Name,
-        "email": customer.Email,
-        "phone": customer.Tel,
-
-        "addresses": [
-            {
-                "street": customer.customerAddressInstructions,
-                "country": "Colombia",
-                "postal_code": "",
-                "type": 1
-            }
-        ],
-        "tags": [
-            "api_cleancloud", "Colombia",
-        ]
-    };
-
-    const apiUrl = 'https://api.clientify.net/v1/contacts/';
-    const authToken = '9ea36e0237e45db8581e45546b9a5474a701556f';
-
-    const config = {
-        method: 'post',
-        maxBodyLength: Infinity,
-        url: apiUrl,
-        headers: {
-            'Authorization': `Token ${authToken}`,
-            'Content-Type': 'application/json'
-        },
-        data: JSON.stringify(contactData)
-    };
-    console.log('Script iniciado');
-
-    // Agrega un retraso antes de realizar la siguiente consulta y envío
-    return new Promise(resolve => {
-        setTimeout(() => {
-            axios(config)
-                .then(response => {
-                    console.log("Enviado a Clientify");
-                    console.log('Script iniciado');
-
-                    resolve();
-                })
-                .catch(error => {
-                    console.log("Contacto NO enviado");
-                    resolve();
-                });
-        });
-    });
-};
-
-let cleanCloudRequestsCount = 0;
-
-axios(customersOptions)
-    .then(response => {
-        cleanCloudRequestsCount++;
-        //console.log('API Response (Customers):', response.data);
-
-        if (response.data && response.data.Customers && Array.isArray(response.data.Customers)) {
-            const customersData = response.data.Customers;
-            axios(ordersOptions)
-                .then(response => {
-                    cleanCloudRequestsCount++;
-                    //console.log('API Response (Orders):', response.data);
-
-                    if (response.data && response.data.Orders && Array.isArray(response.data.Orders)) {
-                        const ordersData = response.data.Orders;
-                        continueWithOrders(customersData, ordersData);
-                    } else {
-                        console.error('Error: La respuesta de la API no contiene una propiedad Orders iterable.');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error (Orders):', error);
-                });
-        } else {
-            console.error('Error: La respuesta de la API no contiene una propiedad Customers iterable.');
-        }
-    })
-    .catch(error => {
-        console.error('Error (Customers):', error);
-    });
-
-
-
-// Opciones del cliente para la solicitud inicial
-const initialRequestOptions = {
-    method: 'post',
-    headers: {
-        'Content-Type': 'application/json'
-    }
-};
-
-const fetchCleanCloudData = async () => {
-    try {
-        // Realizar la primera solicitud solo si los datos en caché aún no existen
-        if (!cachedCustomersData || !cachedOrdersData) {
-            const customersResponse = await axios({
-                ...initialRequestOptions,
-                ...customersOptions
-            });
-            const customersData = customersResponse.data?.Customers || [];
-
-            const ordersResponse = await axios({
-                ...initialRequestOptions,
-                ...ordersOptions
-            });
-            const ordersData = ordersResponse.data?.Orders || [];
-
-            cachedCustomersData = customersData;
-            cachedOrdersData = ordersData;
-
-            console.log('Datos de Clean Cloud actualizados.');
-        }
-    } catch (error) {
-        console.error('Error al obtener datos de Clean Cloud:', error.message);
-    }
-};
-
-
-
-
-const runProcess = async () => {
-    try {
-        // Verificar si ya se han obtenido los datos de Clean Cloud
-        if (!cachedCustomersData || !cachedOrdersData) {
-            await fetchCleanCloudData();
-        }
-
-        // Procesar la información utilizando los datos en caché
-        await continueWithOrders(cachedCustomersData, cachedOrdersData);
-        console.log('Proceso de comparación completado.');
-    } catch (error) {
-        console.error('Error en el proceso:', error.message);
-    }
-};
-
-
-
-console.log(`Número total de peticiones a Clean Cloud: ${cleanCloudRequestsCount}`);
-// Función para mantener activa la instancia
-const keepInstanceActive = () => {
-    console.log('Manteniendo la instancia activa.');
-};
-
-// Configurar un intervalo para mantener activa la instancia cada 40 segundos
-const keepInstanceActiveInterval = 20 * 1000;
-
-setInterval(() => {
-    keepInstanceActive();
-}, keepInstanceActiveInterval);
-
-// Configurar un intervalo para actualizar los datos cada minuto (60,000 milisegundos)
-const updateInterval = 300* 60 * 1000; // Cada 30 minutos
-
+// Agrega un pequeño retardo de 10 minutos entre cada ejecucion del codigo
 setInterval(async () => {
-    console.log('Antes de fetchCleanCloudData');
-    await fetchCleanCloudData();
-    console.log('Después de fetchCleanCloudData, antes de runProcess');
-    runProcess();
-    console.log('Después de runProcess');
-}, updateInterval);
+  console.log('Ejecutando fetchDataAndPost...');
+  await fetchDataAndPost();
+}, 10 *  60 * 1000);
