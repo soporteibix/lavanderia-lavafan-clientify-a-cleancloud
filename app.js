@@ -1,6 +1,9 @@
 import axios from 'axios';
-//Token clientify
-const token = "9ea36e0237e45db8581e45546b9a5474a701556f";
+
+//token Clientify (se remplaza en cada cuenta nueva)
+const token = "9ea36e0237e45db8581e45546b9a5474a701556f"; //solo reemplazar lo que esta entre colimmas, no toquen las comillas, abajo dejo un ejemplo
+//const authToken = 'TOKEN-AQUI';
+
 
 if (!token) {
   console.error('Token de autorización no proporcionado. Asegúrate de configurar la variable de entorno CLIENTIFY_TOKEN.');
@@ -48,8 +51,10 @@ const displayContactInfo = (contact) => {
   console.log(`Dirección: ${contact.addresses && contact.addresses.length > 0 ? contact.addresses[0].street : 'N/A'}, ${contact.addresses && contact.addresses.length > 0 ? contact.addresses[0].city : 'N/A'}, ${contact.addresses && contact.addresses.length > 0 ? contact.addresses[0].state : 'N/A'}, ${contact.addresses && contact.addresses.length > 0 ? contact.addresses[0].country : 'N/A'}`);
   console.log(`Tags: ${contact.tags && contact.tags.length > 0 ? contact.tags.join(', ') : 'N/A'}`);
   console.log(`Fecha de creación: ${contact.created}`);
+  const numeroApartamentoField = contact.custom_fields.find(field => field.field === 'Numero de apartamento');
+  const numeroApartamento = numeroApartamentoField ? numeroApartamentoField.value : 'N/A';
+  console.log(`Número de apartamento: ${numeroApartamento}`);
 
-  console.log('------------------------');
 };
 
 const fetchDataAndPost = async () => {
@@ -59,16 +64,33 @@ const fetchDataAndPost = async () => {
 
     const currentDate = getCurrentDate();
     const pruebaContacts = contacts.filter(contact =>
-      contact.tags && contact.tags.includes('prueba') && isDateWithinLast3Days(currentDate, contact.created)
+      contact.tags && contact.tags.includes('cliente_nuevo_lavafan') && isDateWithinLast3Days(currentDate, contact.created)
     );
 
-    pruebaContacts.forEach(async (contact, index) => {
+    pruebaContacts.forEach(async (contact) => {
       // Verifica si el contacto ya ha sido procesado antes de mostrar la información
       if (!processedContacts.has(contact.id)) {
         displayContactInfo(contact);
         processedContacts.add(contact.id);
 
         if (contact.addresses && contact.addresses.length > 0) {
+          let numeroApartamento = 'N/A'; // Declarar numeroApartamento aquí
+
+          const numeroApartamentoField = contact.custom_fields.find(field => field.field === 'Numero de apartamento');
+          numeroApartamento = numeroApartamentoField ? numeroApartamentoField.value : 'N/A';
+
+          const customerAddress = {
+            street: contact.addresses && contact.addresses.length > 0 ? contact.addresses[0].street : 'N/A',
+            apartment: numeroApartamento,
+            city: contact.addresses && contact.addresses.length > 0 ? contact.addresses[0].city : 'N/A',
+            state: contact.addresses && contact.addresses.length > 0 ? contact.addresses[0].state : 'N/A',
+            country: contact.addresses && contact.addresses.length > 0 ? contact.addresses[0].country : 'N/A'
+          };
+
+          const formattedCustomerAddress = `${customerAddress.street}, apt: ${customerAddress.apartment}, ${customerAddress.city}, ${customerAddress.state}, ${customerAddress.country}`;
+
+         
+
           const postConfig = {
             method: 'POST',
             url: 'https://cleancloudapp.com/api/addCustomer',
@@ -76,37 +98,54 @@ const fetchDataAndPost = async () => {
               'Content-Type': 'application/json'
             },
             data: {
-              api_token: '1d1132d976e9b68ba0ae528596771783e91aa9c1//',
-              customerName: `${contact.first_name} ${contact.last_name}`,
+              
+
+              //token Clean Cloud (se remplaza en cada cuenta nueva)
+              api_token: '1d1132d976e9b68ba0ae528596771783e91aa9c1',//solo reemplazar lo que esta entre colimmas, no toquen las comillas, abajo dejo un ejemplo
+              //const authToken = 'TOKEN-AQUI';
+
+
+              customerName: `${contact.first_name}`,
               customerTel: contact.phones && contact.phones.length > 0 ? contact.phones[0].phone : '',
               customerEmail: contact.emails && contact.emails.length > 0 ? contact.emails[0].email : '',
-              customerAddress: `${contact.addresses[0].street}, ${contact.addresses[0].city}, ${contact.addresses[0].state}, ${contact.addresses[0].country}`,
-              customerNotes: 'Nota de prueba, cliente desde clientify',
+            customerAddress: `${contact.addresses[0].street}, ${numeroApartamento}, ${contact.addresses[0].city}, ${contact.addresses[0].state} `,
+            customerAddressInstructions: formattedCustomerAddress,
+            addressDetailed: {
+              street:` ${contact.addresses[0].street}`,
+              unit: `${numeroApartamento}`,
+              city: `${contact.addresses[0].city}`,
+              zip:'' ,
+              state: `${contact.addresses[0].state}`
+            },
+              customerNotes: 'Envio de cliente desde clientify',
             }
           };
+          
 
           try {
+            console.log('Enviando solicitud POST a cleancloudapp.com...');
             const postResponse = await axios(postConfig);
+            console.log('Solicitud POST enviada con éxito:');
             console.log('Status:', postResponse.status);
             console.log('Response:', postResponse.data);
           } catch (error) {
-            console.error('Error en la solicitud POST:', error);
+            console.error('Error en la solicitud POST a cleancloudapp.com:', error);
           }
-        }
-
-        // Agrega un pequeño retardo de 15 segundos entre cada solicitud POST
-        if (index < pruebaContacts.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 15000)); // Pausa de 15 segundos
+        } else {
+          console.log('El contacto no tiene dirección, no se realizará la solicitud POST.');
         }
       }
     });
+
+
   } catch (error) {
-    console.error('Error fetching data:', error);
+    console.error('Error al obtener datos desde Clientify API:', error);
   }
 };
 
-// Agrega un pequeño retardo de 10 minutos entre cada ejecucion del codigo
+
+
 setInterval(async () => {
   console.log('Ejecutando fetchDataAndPost...');
   await fetchDataAndPost();
-}, 10 *  60 * 1000);
+}, 60 * 500);
